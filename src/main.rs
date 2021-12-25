@@ -15,12 +15,41 @@ struct Vertex {
 }
 glium::implement_vertex!(Vertex, position);
 
+#[derive(Clone, Copy)]
+pub struct Timer {
+    last: std::time::Instant,
+    pub delta_time: f32,
+}
+
+impl Default for Timer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Timer {
+    pub fn new() -> Self {
+        Self {
+            last: std::time::Instant::now(),
+            delta_time: 0f32,
+        }
+    }
+
+    pub fn advance(&mut self) {
+        let now = std::time::Instant::now();
+        let duration = now - self.last;
+        self.delta_time = duration.as_secs_f32();
+        self.last = now;
+    }
+}
+
 pub struct System {
     pub display: Display,
     pub imgui_ctx: Context,
     pub event_loop: EventLoop<()>,
     pub platform: WinitPlatform,
     pub renderer: Renderer,
+    pub timer: Timer,
 }
 
 impl Default for System {
@@ -47,9 +76,9 @@ impl System {
             display.gl_window().window(),
             HiDpiMode::Default,
         );
-
         let renderer =
             Renderer::init(&mut imgui_ctx, &display).expect("Failed to initialize renderer!");
+        let timer = Timer::new();
 
         System {
             display,
@@ -57,13 +86,14 @@ impl System {
             event_loop,
             platform,
             renderer,
+            timer,
         }
     }
 
-    pub fn enter_main_loop<Fn1, Fn2>(self, mut draw_ui: Fn1, draw_content: Fn2)
+    pub fn enter_main_loop<Fn1, Fn2>(self, mut draw_ui: Fn1, mut draw_content: Fn2)
     where
         Fn1: FnMut(&mut bool, &mut Ui) + 'static,
-        Fn2: Fn(&mut Frame) + 'static,
+        Fn2: FnMut(&mut Frame, f32) + 'static,
     {
         let Self {
             display,
@@ -71,6 +101,7 @@ impl System {
             event_loop,
             mut platform,
             mut renderer,
+            mut timer,
         } = self;
 
         let mut last_frame = std::time::Instant::now();
@@ -102,7 +133,8 @@ impl System {
                 renderer
                     .render(&mut target, draw_data)
                     .expect("Rendering failed!");
-                draw_content(&mut target);
+                timer.advance();
+                draw_content(&mut target, timer.delta_time);
                 target.finish().expect("Falied to swap buffers!");
             }
             Event::WindowEvent {
@@ -135,9 +167,12 @@ fn main() {
         #version 140
 
         in vec2 position;
+        uniform float t;
 
         void main() {
-            gl_Position = vec4(position, 0.0, 1.0);
+            vec2 pos = position;
+            pos.x += t;
+            gl_Position = vec4(pos, 0.0, 1.0);
         }
     "#;
     let fragment_shader_src = r#"
@@ -156,6 +191,8 @@ fn main() {
         None,
     )
     .unwrap();
+
+    let mut offset = 0f32;
 
     system.enter_main_loop(
         move |_, ui| {
@@ -177,13 +214,17 @@ fn main() {
                     })
                 });
         },
-        move |target| {
+        move |target, elapsed| {
+            offset += elapsed;
+            if offset >= 1f32 {
+                offset -= 1.5f32
+            }
             target
                 .draw(
                     &vertex_buffer,
                     &indices,
                     &program,
-                    &glium::uniforms::EmptyUniforms,
+                    &glium::uniform! { t: offset },
                     &Default::default(),
                 )
                 .unwrap();
