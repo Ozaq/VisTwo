@@ -16,6 +16,12 @@ struct Vertex {
 glium::implement_vertex!(Vertex, position);
 
 #[derive(Clone, Copy)]
+struct Offset {
+    offset: [f32; 2],
+}
+glium::implement_vertex!(Offset, offset);
+
+#[derive(Clone, Copy)]
 pub struct Timer {
     last: std::time::Instant,
     pub delta_time: f32,
@@ -152,25 +158,38 @@ fn main() {
     let system = System::new();
     let shape = vec![
         Vertex {
-            position: [-0.5, -0.5],
+            position: [-0.1, -0.1],
         },
         Vertex {
-            position: [0.0, 0.5],
+            position: [0.0, 0.1],
         },
         Vertex {
-            position: [0.5, -0.25],
+            position: [0.1, -0.05],
         },
     ];
     let vertex_buffer = glium::VertexBuffer::new(&system.display, &shape).unwrap();
+    let offsets = vec![
+        Offset {
+            offset: [-0.3, 0.0],
+        },
+        Offset { offset: [0.3, 0.0] },
+        Offset {
+            offset: [0.0, -0.3],
+        },
+        Offset { offset: [0.0, 0.3] },
+    ];
+    let offset_buffer = glium::VertexBuffer::new(&system.display, &offsets).unwrap();
+
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
     let vertex_shader_src = r#"
         #version 140
 
         in vec2 position;
+        in vec2 offset;
         uniform float t;
 
         void main() {
-            vec2 pos = position;
+            vec2 pos = position + offset;
             pos.x += t;
             gl_Position = vec4(pos, 0.0, 1.0);
         }
@@ -221,7 +240,7 @@ fn main() {
             }
             target
                 .draw(
-                    &vertex_buffer,
+                    (&vertex_buffer, offset_buffer.per_instance().unwrap()),
                     &indices,
                     &program,
                     &glium::uniform! { t: offset },
