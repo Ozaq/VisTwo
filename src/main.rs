@@ -1,4 +1,6 @@
 mod legacy_parsers;
+mod replay;
+
 use glium::glutin::dpi::LogicalSize;
 use glium::glutin::event::{Event, WindowEvent};
 use glium::glutin::event_loop::{ControlFlow, EventLoop};
@@ -8,8 +10,11 @@ use glium::{Display, Frame, Surface};
 use imgui::{Condition, Context, MenuItem, Ui, Window};
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use legacy_parsers::Trajectory;
+use std::time::Duration;
 use winit::window::Fullscreen;
+
+use crate::legacy_parsers::Trajectory;
+use crate::replay::Replay;
 
 #[derive(Clone, Copy, Debug)]
 struct Vertex {
@@ -54,7 +59,7 @@ impl Timer {
 
 #[derive(Debug)]
 pub struct ApplicationState {
-    pub trajectory: Option<Trajectory>,
+    pub replay: Option<Replay>,
 }
 
 impl Default for ApplicationState {
@@ -65,7 +70,7 @@ impl Default for ApplicationState {
 
 impl ApplicationState {
     pub fn new() -> Self {
-        Self { trajectory: None }
+        Self { replay: None }
     }
 }
 
@@ -173,7 +178,7 @@ impl System {
                 ..
             } => *control_flow = ControlFlow::Exit,
             event => {
-                platform.handle_event(imgui_ctx.io_mut(), display.gl_window().window(), &event)
+                platform.handle_event(imgui_ctx.io_mut(), display.gl_window().window(), &event);
             }
         });
     }
@@ -301,50 +306,31 @@ fn main() {
         move |keep_running, ui, state| {
             let io = ui.io();
             ui.main_menu_bar(|| {
-                let file_clicked = MenuItem::new("File").build(ui);
-                if file_clicked {
-                    println!("{:?}", state.trajectory);
-                }
-                let open_clicked = MenuItem::new("Open").build(ui);
-                if open_clicked {
-                    state.trajectory = Some(legacy_parsers::prase_trajectory_txt(
-                        std::path::Path::new("/Users/kkratz/Downloads/results/bottleneck_traj.txt"),
-                    ));
-                }
-                *keep_running = !MenuItem::new("Exit").build(ui);
+                ui.menu("Menu", || {
+                    let file_clicked = MenuItem::new("File").build(ui);
+                    let open_clicked = MenuItem::new("Open").build(ui);
+                    if open_clicked {
+                        let (trajectory, frame_duration) =
+                            legacy_parsers::prase_trajectory_txt(std::path::Path::new(
+                                "/Users/kkratz/Downloads/results/bottleneck_traj.txt",
+                            ));
+                        state.replay = Some(Replay::new(trajectory, frame_duration));
+                    }
+                    *keep_running = !MenuItem::new("Exit").build(ui);
+                })
             });
-            //Window::new("Hello!")
-            //    .size(io.display_size, Condition::Always)
-            //    .position([0f32, 0f32], Condition::Always)
-            //    .no_decoration()
-            //    .menu_bar(true)
-            //    .movable(false)
-            //    .build(ui, || {
-            //        ui.menu_bar(|| {
-            //            let file_clicked = MenuItem::new("File").build(ui);
-            //            if file_clicked {
-            //                println!("{:?}", state.trajectory);
-            //            }
-            //            let open_clicked = MenuItem::new("Open").build(ui);
-            //            if open_clicked {
-            //                state.trajectory =
-            //                    Some(legacy_parsers::prase_trajectory_txt(std::path::Path::new(
-            //                        "/Users/kkratz/Downloads/results/bottleneck_traj.txt",
-            //                    )));
-            //            }
-            //            *keep_running = !MenuItem::new("Exit").build(ui);
-            //        })
-            //    });
         },
         move |target, elapsed, state, display| {
-            let (offsets, (left, right, bottom, top)) = match state.trajectory.as_ref() {
-                Some(t) => {
+            let (offsets, (left, right, bottom, top)) = match state.replay.as_mut() {
+                Some(replay) => {
+                    replay.advance_by(Duration::from_secs_f32(elapsed));
+                    let frame = replay.current_frame();
                     let mut o: Vec<VertexInstanceAttributes> = Vec::new();
-                    o.reserve(t.frames.len());
-                    for e in &t.frames[10].positions {
+                    o.reserve(frame.positions.len());
+                    for e in &frame.positions {
                         o.push(VertexInstanceAttributes { offset: *e })
                     }
-                    (o, t.area())
+                    (o, replay.area())
                 }
                 None => (Vec::new(), (-1.0, 1.0, -1.0, 1.0)),
             };
@@ -361,10 +347,11 @@ fn main() {
             let offset_buffer = glium::VertexBuffer::new(display, &offsets).unwrap();
             //let offset_buffer = glium::VertexBuffer::new(display, &offsets2).unwrap();
             //let (left, right, bottom, top) = (-1.0f32, 4.5f32, -1.0f32, 4.5f32);
-            println!(
-                "area: left {}, right {}, top {}, bottom {}",
-                left, right, top, bottom
-            );
+            let (width, height) = display.get_framebuffer_dimensions();
+            let display_aspect = width as f32 / height as f32;
+            println!("display {} {} => {}", width, height, display_aspect);
+            let (left, right, bottom, top) =
+                fixup_aspect_ratio(left, right, bottom, top, display_aspect);
             target
                 .draw(
                     (&vertex_buffer, offset_buffer.per_instance().unwrap()),
@@ -376,4 +363,27 @@ fn main() {
                 .unwrap();
         },
     );
+}
+
+fn fixup_aspect_ratio(
+    left: f32,
+    right: f32,
+    bottom: f32,
+    top: f32,
+    display_aspect: f32,
+) -> (f32, f32, f32, f32) {
+    let width = right - left;
+    let height = top - bottom;
+    let data_aspect = width / height;
+    if data_aspect > display_aspect {
+        let desired_height = width / display_aspect;
+        let delta = (desired_height - height) / 2.0;
+        let (left, right, bottom, top) = (left, right, bottom - delta, top + delta);
+        (left, right, bottom, top)
+    } else {
+        let desired_width = height * display_aspect;
+        let delta = (desired_width - width) / 2.0;
+        let (left, right, bottom, top) = (left - delta, right + delta, bottom, top);
+        (left, right, bottom, top)
+    }
 }

@@ -2,6 +2,7 @@ use regex::Regex;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::path::Path;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct Trajectory {
@@ -45,11 +46,13 @@ struct Entry {
     position: [f32; 2],
 }
 
-pub fn prase_trajectory_txt(path: &Path) -> Trajectory {
+pub fn prase_trajectory_txt(path: &Path) -> (Trajectory, Duration) {
     let entry_matcher = Regex::new(r"^(\d+)\t(\d+)\t(\d+(?:\.\d+)?)\t(\d+(?:\.\d+)?)").unwrap();
+    let fps_matcher = Regex::new(r"^#framerate: (\d+(?:\.\d+)?)$").unwrap();
     let file = std::fs::File::open(path).unwrap();
     let lines = BufReader::new(file).lines();
     let mut entries = Vec::<Entry>::new();
+    let mut frame_duration_as_f64: f64 = 1.0 / 8.0;
     for line in lines.flatten() {
         if let Some(captures) = entry_matcher.captures(line.as_ref()) {
             let frame_id = captures[2].parse::<i32>().unwrap();
@@ -57,6 +60,8 @@ pub fn prase_trajectory_txt(path: &Path) -> Trajectory {
             let y = captures[4].parse::<f32>().unwrap();
             let position = [x, y];
             entries.push(Entry { frame_id, position })
+        } else if let Some(captures) = fps_matcher.captures(line.as_ref()) {
+            frame_duration_as_f64 = 1.0 / captures[1].parse::<f64>().unwrap();
         }
     }
     entries.sort_by(|a, b| a.frame_id.cmp(&b.frame_id));
@@ -75,7 +80,7 @@ pub fn prase_trajectory_txt(path: &Path) -> Trajectory {
             .positions
             .push(entry.position);
     }
-    trajectory
+    (trajectory, Duration::from_secs_f64(frame_duration_as_f64))
 }
 
 mod tests {
