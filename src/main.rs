@@ -96,6 +96,18 @@ impl Default for System {
 impl System {
     pub fn new() -> Self {
         let event_loop = EventLoop::new();
+
+        // Fix window creation on MacOS, for details see:
+        // https://github.com/rust-windowing/winit/issues/2051
+        #[cfg(target_os = "macos")]
+        unsafe {
+            // work-around for https://github.com/rust-windowing/winit/issues/2051
+            use cocoa::appkit::NSApplication as _;
+            cocoa::appkit::NSApp().setActivationPolicy_(
+                cocoa::appkit::NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular,
+            );
+        }
+
         let wb = WindowBuilder::new()
             //.with_fullscreen(Some(Fullscreen::Borderless(event_loop.primary_monitor())))
             .with_resizable(true)
