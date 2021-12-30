@@ -1,3 +1,4 @@
+mod keymap;
 mod legacy_parsers;
 mod replay;
 
@@ -13,6 +14,7 @@ use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::time::Duration;
 use winit::window::Fullscreen;
 
+use crate::keymap::KeyMap;
 use crate::legacy_parsers::Trajectory;
 use crate::replay::Replay;
 
@@ -82,6 +84,7 @@ pub struct System {
     pub renderer: Renderer,
     pub timer: Timer,
     pub state: ApplicationState,
+    pub keymap: KeyMap,
 }
 
 impl Default for System {
@@ -113,6 +116,7 @@ impl System {
             Renderer::init(&mut imgui_ctx, &display).expect("Failed to initialize renderer!");
         let timer = Timer::new();
         let state = ApplicationState::new();
+        let keymap = KeyMap::new();
 
         System {
             display,
@@ -122,6 +126,7 @@ impl System {
             renderer,
             timer,
             state,
+            keymap,
         }
     }
 
@@ -138,6 +143,7 @@ impl System {
             mut renderer,
             mut timer,
             mut state,
+            mut keymap,
         } = self;
 
         let mut last_frame = std::time::Instant::now();
@@ -152,6 +158,7 @@ impl System {
                 platform
                     .prepare_frame(imgui_ctx.io_mut(), gl_window.window())
                     .expect("Failed to prepare frame!");
+                //println!("{:?}", &keymap);
                 gl_window.window().request_redraw();
             }
             Event::RedrawRequested(_) => {
@@ -178,6 +185,7 @@ impl System {
                 ..
             } => *control_flow = ControlFlow::Exit,
             event => {
+                keymap.handle_event(&event);
                 platform.handle_event(imgui_ctx.io_mut(), display.gl_window().window(), &event);
             }
         });
@@ -349,7 +357,6 @@ fn main() {
             //let (left, right, bottom, top) = (-1.0f32, 4.5f32, -1.0f32, 4.5f32);
             let (width, height) = display.get_framebuffer_dimensions();
             let display_aspect = width as f32 / height as f32;
-            println!("display {} {} => {}", width, height, display_aspect);
             let (left, right, bottom, top) =
                 fixup_aspect_ratio(left, right, bottom, top, display_aspect);
             target
