@@ -1,3 +1,4 @@
+mod console;
 mod keymap;
 mod legacy_parsers;
 mod replay;
@@ -8,12 +9,13 @@ use glium::glutin::event_loop::{ControlFlow, EventLoop};
 use glium::glutin::window::WindowBuilder;
 use glium::glutin::ContextBuilder;
 use glium::{Display, Frame, Surface};
-use imgui::{Condition, Context, MenuItem, Ui, Window};
+use imgui::{Condition, Context, Key, MenuItem, Ui, Window};
 use imgui_glium_renderer::Renderer;
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use std::time::Duration;
 use winit::window::Fullscreen;
 
+use crate::console::Console;
 use crate::keymap::KeyMap;
 use crate::legacy_parsers::Trajectory;
 use crate::replay::Replay;
@@ -62,6 +64,7 @@ impl Timer {
 #[derive(Debug)]
 pub struct ApplicationState {
     pub replay: Option<Replay>,
+    pub console: Console,
 }
 
 impl Default for ApplicationState {
@@ -72,7 +75,10 @@ impl Default for ApplicationState {
 
 impl ApplicationState {
     pub fn new() -> Self {
-        Self { replay: None }
+        Self {
+            replay: None,
+            console: Console::new(),
+        }
     }
 }
 
@@ -339,6 +345,15 @@ fn main() {
                     *keep_running = !MenuItem::new("Exit").build(ui);
                 })
             });
+            state.console.draw(&ui);
+            //if ui.is_key_released(Key::A) {
+            //    ui.open_popup("Oh-no");
+            //}
+            //if let Some(popup) = ui.popup_modal("Oh-no").begin_popup(&ui) {
+            //    if ui.button("Ok") {
+            //        ui.close_current_popup();
+            //    }
+            //};
         },
         move |target, elapsed, state, display| {
             let (offsets, (left, right, bottom, top)) = match state.replay.as_mut() {
